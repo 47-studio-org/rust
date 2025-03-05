@@ -2,18 +2,16 @@
 // llvm. Also checks that the abi-sysv64 feature gate allows usage
 // of the sysv64 abi.
 //
-// needs-llvm-components: x86
-// compile-flags: -C no-prepopulate-passes --target=x86_64-unknown-linux-gnu -Copt-level=0
+//@ add-core-stubs
+//@ needs-llvm-components: x86
+//@ compile-flags: -C no-prepopulate-passes --target=x86_64-unknown-linux-gnu -Copt-level=0
 
 #![crate_type = "lib"]
 #![no_core]
 #![feature(abi_x86_interrupt, no_core, lang_items)]
 
-#[lang = "sized"]
-trait Sized {}
-#[lang = "copy"]
-trait Copy {}
-impl Copy for i64 {}
+extern crate minicore;
+use minicore::*;
 
 // CHECK: define x86_64_sysvcc i64 @has_sysv64_abi
 #[no_mangle]

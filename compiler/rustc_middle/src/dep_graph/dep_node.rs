@@ -1,73 +1,15 @@
-//! Nodes in the dependency graph.
-//!
-//! A node in the [dependency graph] is represented by a [`DepNode`].
-//! A `DepNode` consists of a [`DepKind`] (which
-//! specifies the kind of thing it represents, like a piece of HIR, MIR, etc.)
-//! and a [`Fingerprint`], a 128-bit hash value, the exact meaning of which
-//! depends on the node's `DepKind`. Together, the kind and the fingerprint
-//! fully identify a dependency node, even across multiple compilation sessions.
-//! In other words, the value of the fingerprint does not depend on anything
-//! that is specific to a given compilation session, like an unpredictable
-//! interning key (e.g., `NodeId`, `DefId`, `Symbol`) or the numeric value of a
-//! pointer. The concept behind this could be compared to how git commit hashes
-//! uniquely identify a given commit. The fingerprinting approach has
-//! a few advantages:
-//!
-//! * A `DepNode` can simply be serialized to disk and loaded in another session
-//!   without the need to do any "rebasing" (like we have to do for Spans and
-//!   NodeIds) or "retracing" (like we had to do for `DefId` in earlier
-//!   implementations of the dependency graph).
-//! * A `Fingerprint` is just a bunch of bits, which allows `DepNode` to
-//!   implement `Copy`, `Sync`, `Send`, `Freeze`, etc.
-//! * Since we just have a bit pattern, `DepNode` can be mapped from disk into
-//!   memory without any post-processing (e.g., "abomination-style" pointer
-//!   reconstruction).
-//! * Because a `DepNode` is self-contained, we can instantiate `DepNodes` that
-//!   refer to things that do not exist anymore. In previous implementations
-//!   `DepNode` contained a `DefId`. A `DepNode` referring to something that
-//!   had been removed between the previous and the current compilation session
-//!   could not be instantiated because the current compilation session
-//!   contained no `DefId` for thing that had been removed.
-//!
-//! `DepNode` definition happens in the `define_dep_nodes!()` macro. This macro
-//! defines the `DepKind` enum. Each `DepKind` has its own parameters that are
-//! needed at runtime in order to construct a valid `DepNode` fingerprint.
-//! However, only `CompileCodegenUnit` and `CompileMonoItem` are constructed
-//! explicitly (with `make_compile_codegen_unit` cq `make_compile_mono_item`).
-//!
-//! Because the macro sees what parameters a given `DepKind` requires, it can
-//! "infer" some properties for each kind of `DepNode`:
-//!
-//! * Whether a `DepNode` of a given kind has any parameters at all. Some
-//!   `DepNode`s could represent global concepts with only one value.
-//! * Whether it is possible, in principle, to reconstruct a query key from a
-//!   given `DepNode`. Many `DepKind`s only require a single `DefId` parameter,
-//!   in which case it is possible to map the node's fingerprint back to the
-//!   `DefId` it was computed from. In other cases, too much information gets
-//!   lost during fingerprint computation.
-//!
-//! `make_compile_codegen_unit` and `make_compile_mono_items`, together with
-//! `DepNode::new()`, ensures that only valid `DepNode` instances can be
-//! constructed. For example, the API does not allow for constructing
-//! parameterless `DepNode`s with anything other than a zeroed out fingerprint.
-//! More generally speaking, it relieves the user of the `DepNode` API of
-//! having to know how to compute the expected fingerprint for a given set of
-//! node parameters.
-//!
-//! [dependency graph]: https://rustc-dev-guide.rust-lang.org/query.html
+use rustc_data_structures::fingerprint::Fingerprint;
+use rustc_hir::def_id::{CrateNum, DefId, LOCAL_CRATE, LocalDefId, LocalModDefId, ModDefId};
+use rustc_hir::definitions::DefPathHash;
+use rustc_hir::{HirId, ItemLocalId, OwnerId};
+pub use rustc_query_system::dep_graph::DepNode;
+use rustc_query_system::dep_graph::FingerprintStyle;
+pub use rustc_query_system::dep_graph::dep_node::DepKind;
+pub(crate) use rustc_query_system::dep_graph::{DepContext, DepNodeParams};
+use rustc_span::Symbol;
 
 use crate::mir::mono::MonoItem;
 use crate::ty::TyCtxt;
-
-use rustc_data_structures::fingerprint::Fingerprint;
-use rustc_hir::def_id::{CrateNum, DefId, LocalDefId, LocalModDefId, ModDefId, LOCAL_CRATE};
-use rustc_hir::definitions::DefPathHash;
-use rustc_hir::{HirId, ItemLocalId, OwnerId};
-use rustc_query_system::dep_graph::FingerprintStyle;
-use rustc_span::symbol::Symbol;
-use std::hash::Hash;
-
-pub use rustc_query_system::dep_graph::{DepContext, DepNodeParams};
 
 macro_rules! define_dep_nodes {
     (
@@ -84,55 +26,39 @@ macro_rules! define_dep_nodes {
         // encoding. The derived Encodable/Decodable uses leb128 encoding which is
         // dense when only considering this enum. But DepKind is encoded in a larger
         // struct, and there we can take advantage of the unused bits in the u16.
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         #[allow(non_camel_case_types)]
-        #[repr(u16)]
-        pub enum DepKind {
+        #[repr(u16)] // Must be kept in sync with the inner type of `DepKind`.
+        enum DepKindDefs {
             $( $( #[$attr] )* $variant),*
         }
 
-        impl DepKind {
-            // This const implements two things: A bounds check so that we can decode
-            // a DepKind from a u16 with just one check, and a const check that the
-            // discriminants of the variants have been assigned consecutively from 0
-            // so that just the one comparison suffices to check that the u16 can be
-            // transmuted to a DepKind.
-            const VARIANTS: u16 = {
-                let deps: &[DepKind] = &[$(DepKind::$variant,)*];
-                let mut i = 0;
-                while i < deps.len() {
-                    if i as u16 != deps[i] as u16 {
-                        panic!();
-                    }
-                    i += 1;
-                }
-                deps.len() as u16
-            };
+        #[allow(non_upper_case_globals)]
+        pub mod dep_kinds {
+            use super::*;
+
+            $(
+                // The `as u16` cast must be kept in sync with the inner type of `DepKind`.
+                pub const $variant: DepKind = DepKind::new(DepKindDefs::$variant as u16);
+            )*
         }
 
-        impl<S: rustc_serialize::Encoder> rustc_serialize::Encodable<S> for DepKind {
-            #[inline]
-            fn encode(&self, s: &mut S) {
-                s.emit_u16(*self as u16);
-            }
-        }
-
-        impl<D: rustc_serialize::Decoder> rustc_serialize::Decodable<D> for DepKind {
-            #[inline]
-            fn decode(d: &mut D) -> DepKind {
-                let discrim = d.read_u16();
-                assert!(discrim < DepKind::VARIANTS);
-                // SAFETY: DepKind::VARIANTS checks that the discriminant values permit
-                // this one check to soundly guard the transmute.
-                unsafe {
-                    std::mem::transmute::<u16, DepKind>(discrim)
+        // This checks that the discriminants of the variants have been assigned consecutively
+        // from 0 so that they can be used as a dense index.
+        pub(crate) const DEP_KIND_VARIANTS: u16 = {
+            let deps = &[$(dep_kinds::$variant,)*];
+            let mut i = 0;
+            while i < deps.len() {
+                if i != deps[i].as_usize() {
+                    panic!();
                 }
+                i += 1;
             }
-        }
+            deps.len() as u16
+        };
 
         pub(super) fn dep_kind_from_label_string(label: &str) -> Result<DepKind, ()> {
             match label {
-                $(stringify!($variant) => Ok(DepKind::$variant),)*
+                $(stringify!($variant) => Ok(dep_kinds::$variant),)*
                 _ => Err(()),
             }
         }
@@ -158,12 +84,10 @@ rustc_query_append!(define_dep_nodes![
     [] fn CompileMonoItem() -> (),
 ]);
 
-static_assert_size!(DepKind, 2);
-
 // WARNING: `construct` is generic and does not know that `CompileCodegenUnit` takes `Symbol`s as keys.
 // Be very careful changing this type signature!
 pub(crate) fn make_compile_codegen_unit(tcx: TyCtxt<'_>, name: Symbol) -> DepNode {
-    DepNode::construct(tcx, DepKind::CompileCodegenUnit, &name)
+    DepNode::construct(tcx, dep_kinds::CompileCodegenUnit, &name)
 }
 
 // WARNING: `construct` is generic and does not know that `CompileMonoItem` takes `MonoItem`s as keys.
@@ -172,41 +96,18 @@ pub(crate) fn make_compile_mono_item<'tcx>(
     tcx: TyCtxt<'tcx>,
     mono_item: &MonoItem<'tcx>,
 ) -> DepNode {
-    DepNode::construct(tcx, DepKind::CompileMonoItem, mono_item)
+    DepNode::construct(tcx, dep_kinds::CompileMonoItem, mono_item)
 }
 
-pub type DepNode = rustc_query_system::dep_graph::DepNode<DepKind>;
-
-// We keep a lot of `DepNode`s in memory during compilation. It's not
-// required that their size stay the same, but we don't want to change
-// it inadvertently. This assert just ensures we're aware of any change.
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-static_assert_size!(DepNode, 18);
-
-#[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-static_assert_size!(DepNode, 24);
-
 pub trait DepNodeExt: Sized {
-    /// Extracts the DefId corresponding to this DepNode. This will work
-    /// if two conditions are met:
-    ///
-    /// 1. The Fingerprint of the DepNode actually is a DefPathHash, and
-    /// 2. the item that the DefPath refers to exists in the current tcx.
-    ///
-    /// Condition (1) is determined by the DepKind variant of the
-    /// DepNode. Condition (2) might not be fulfilled if a DepNode
-    /// refers to something from the previous compilation session that
-    /// has been removed.
     fn extract_def_id(&self, tcx: TyCtxt<'_>) -> Option<DefId>;
 
-    /// Used in testing
     fn from_label_string(
         tcx: TyCtxt<'_>,
         label: &str,
         def_path_hash: DefPathHash,
     ) -> Result<Self, ()>;
 
-    /// Used in testing
     fn has_label_string(label: &str) -> bool;
 }
 
@@ -223,9 +124,7 @@ impl DepNodeExt for DepNode {
     /// has been removed.
     fn extract_def_id(&self, tcx: TyCtxt<'_>) -> Option<DefId> {
         if tcx.fingerprint_style(self.kind) == FingerprintStyle::DefPathHash {
-            Some(tcx.def_path_hash_to_def_id(DefPathHash(self.hash.into()), &mut || {
-                panic!("Failed to extract DefId: {:?} {}", self.kind, self.hash)
-            }))
+            tcx.def_path_hash_to_def_id(DefPathHash(self.hash.into()))
         } else {
             None
         }
@@ -418,11 +317,7 @@ impl<'tcx> DepNodeParams<TyCtxt<'tcx>> for HirId {
         if tcx.fingerprint_style(dep_node.kind) == FingerprintStyle::HirId {
             let (local_hash, local_id) = Fingerprint::from(dep_node.hash).split();
             let def_path_hash = DefPathHash::new(tcx.stable_crate_id(LOCAL_CRATE), local_hash);
-            let def_id = tcx
-                .def_path_hash_to_def_id(def_path_hash, &mut || {
-                    panic!("Failed to extract HirId: {:?} {}", dep_node.kind, dep_node.hash)
-                })
-                .expect_local();
+            let def_id = tcx.def_path_hash_to_def_id(def_path_hash)?.expect_local();
             let local_id = local_id
                 .as_u64()
                 .try_into()
@@ -434,52 +329,46 @@ impl<'tcx> DepNodeParams<TyCtxt<'tcx>> for HirId {
     }
 }
 
-macro_rules! impl_for_typed_def_id {
-    ($Name:ident, $LocalName:ident) => {
-        impl<'tcx> DepNodeParams<TyCtxt<'tcx>> for $Name {
-            #[inline(always)]
-            fn fingerprint_style() -> FingerprintStyle {
-                FingerprintStyle::DefPathHash
-            }
+impl<'tcx> DepNodeParams<TyCtxt<'tcx>> for ModDefId {
+    #[inline(always)]
+    fn fingerprint_style() -> FingerprintStyle {
+        FingerprintStyle::DefPathHash
+    }
 
-            #[inline(always)]
-            fn to_fingerprint(&self, tcx: TyCtxt<'tcx>) -> Fingerprint {
-                self.to_def_id().to_fingerprint(tcx)
-            }
+    #[inline(always)]
+    fn to_fingerprint(&self, tcx: TyCtxt<'tcx>) -> Fingerprint {
+        self.to_def_id().to_fingerprint(tcx)
+    }
 
-            #[inline(always)]
-            fn to_debug_str(&self, tcx: TyCtxt<'tcx>) -> String {
-                self.to_def_id().to_debug_str(tcx)
-            }
+    #[inline(always)]
+    fn to_debug_str(&self, tcx: TyCtxt<'tcx>) -> String {
+        self.to_def_id().to_debug_str(tcx)
+    }
 
-            #[inline(always)]
-            fn recover(tcx: TyCtxt<'tcx>, dep_node: &DepNode) -> Option<Self> {
-                DefId::recover(tcx, dep_node).map($Name::new_unchecked)
-            }
-        }
-
-        impl<'tcx> DepNodeParams<TyCtxt<'tcx>> for $LocalName {
-            #[inline(always)]
-            fn fingerprint_style() -> FingerprintStyle {
-                FingerprintStyle::DefPathHash
-            }
-
-            #[inline(always)]
-            fn to_fingerprint(&self, tcx: TyCtxt<'tcx>) -> Fingerprint {
-                self.to_def_id().to_fingerprint(tcx)
-            }
-
-            #[inline(always)]
-            fn to_debug_str(&self, tcx: TyCtxt<'tcx>) -> String {
-                self.to_def_id().to_debug_str(tcx)
-            }
-
-            #[inline(always)]
-            fn recover(tcx: TyCtxt<'tcx>, dep_node: &DepNode) -> Option<Self> {
-                LocalDefId::recover(tcx, dep_node).map($LocalName::new_unchecked)
-            }
-        }
-    };
+    #[inline(always)]
+    fn recover(tcx: TyCtxt<'tcx>, dep_node: &DepNode) -> Option<Self> {
+        DefId::recover(tcx, dep_node).map(ModDefId::new_unchecked)
+    }
 }
 
-impl_for_typed_def_id! { ModDefId, LocalModDefId }
+impl<'tcx> DepNodeParams<TyCtxt<'tcx>> for LocalModDefId {
+    #[inline(always)]
+    fn fingerprint_style() -> FingerprintStyle {
+        FingerprintStyle::DefPathHash
+    }
+
+    #[inline(always)]
+    fn to_fingerprint(&self, tcx: TyCtxt<'tcx>) -> Fingerprint {
+        self.to_def_id().to_fingerprint(tcx)
+    }
+
+    #[inline(always)]
+    fn to_debug_str(&self, tcx: TyCtxt<'tcx>) -> String {
+        self.to_def_id().to_debug_str(tcx)
+    }
+
+    #[inline(always)]
+    fn recover(tcx: TyCtxt<'tcx>, dep_node: &DepNode) -> Option<Self> {
+        LocalDefId::recover(tcx, dep_node).map(LocalModDefId::new_unchecked)
+    }
+}

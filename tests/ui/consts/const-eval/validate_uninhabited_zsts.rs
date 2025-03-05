@@ -1,9 +1,5 @@
-// stderr-per-bitwidth
-
 const fn foo() -> ! {
-    unsafe { std::mem::transmute(()) }
-    //~^ ERROR evaluation of constant value failed
-    //~| WARN the type `!` does not permit zero-initialization [invalid_value]
+    unsafe { std::mem::transmute(()) } //~ inside `foo`
 }
 
 // Type defined in a submodule, so that it is not "visibly"
@@ -17,10 +13,10 @@ pub mod empty {
 }
 
 const FOO: [empty::Empty; 3] = [foo(); 3];
+//~^ ERROR evaluation of constant value failed
 
 const BAR: [empty::Empty; 3] = [unsafe { std::mem::transmute(()) }; 3];
 //~^ ERROR evaluation of constant value failed
-//~| WARN the type `empty::Empty` does not permit zero-initialization
 
 fn main() {
     FOO;

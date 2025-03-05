@@ -28,24 +28,34 @@ impl Line {
 
 fn main() {
     on_slice(&vec![]);
+    //~^ useless_vec
     on_slice(&[]);
     on_mut_slice(&mut vec![]);
+    //~^ useless_vec
 
     on_slice(&vec![1, 2]);
+    //~^ useless_vec
     on_slice(&[1, 2]);
     on_mut_slice(&mut vec![1, 2]);
+    //~^ useless_vec
 
     on_slice(&vec![1, 2]);
+    //~^ useless_vec
     on_slice(&[1, 2]);
     on_mut_slice(&mut vec![1, 2]);
+    //~^ useless_vec
     #[rustfmt::skip]
     on_slice(&vec!(1, 2));
+    //~^ useless_vec
     on_slice(&[1, 2]);
     on_mut_slice(&mut vec![1, 2]);
+    //~^ useless_vec
 
     on_slice(&vec![1; 2]);
+    //~^ useless_vec
     on_slice(&[1; 2]);
     on_mut_slice(&mut vec![1; 2]);
+    //~^ useless_vec
 
     on_vec(&vec![]);
     on_vec(&vec![1, 2]);
@@ -72,17 +82,21 @@ fn main() {
 
     // https://github.com/rust-lang/rust-clippy/issues/2262#issuecomment-783979246
     let _x: i32 = vec![1, 2, 3].iter().sum();
+    //~^ useless_vec
 
     // Do lint
     let mut x = vec![1, 2, 3];
+    //~^ useless_vec
     x.fill(123);
     dbg!(x[0]);
     dbg!(x.len());
     dbg!(x.iter().sum::<i32>());
 
     let _x: &[i32] = &vec![1, 2, 3];
+    //~^ useless_vec
 
     for _ in vec![1, 2, 3] {}
+    //~^ useless_vec
 
     // Don't lint
     let x = vec![1, 2, 3];
@@ -120,7 +134,9 @@ fn issue11075() {
             stringify!($e)
         };
     }
+    #[allow(clippy::never_loop)]
     for _string in vec![repro!(true), repro!(null)] {
+        //~^ useless_vec
         unimplemented!();
     }
 
@@ -138,6 +154,8 @@ fn issue11075() {
     }
 
     in_macro!(1, vec![1, 2], vec![1; 2]);
+    //~^ useless_vec
+    //~| useless_vec
 
     macro_rules! from_macro {
         () => {
@@ -157,10 +175,12 @@ fn issue11075() {
 #[clippy::msrv = "1.53"]
 fn above() {
     for a in vec![1, 2, 3] {
+        //~^ useless_vec
         let _: usize = a;
     }
 
     for a in vec![String::new(), String::new()] {
+        //~^ useless_vec
         let _: String = a;
     }
 }
@@ -174,4 +194,51 @@ fn below() {
     for a in vec![String::new(), String::new()] {
         let _: String = a;
     }
+}
+
+fn func_needing_vec(_bar: usize, _baz: Vec<usize>) {}
+fn func_not_needing_vec(_bar: usize, _baz: usize) {}
+
+fn issue11861() {
+    macro_rules! this_macro_needs_vec {
+        ($x:expr) => {{
+            func_needing_vec($x.iter().sum(), $x);
+            for _ in $x {}
+        }};
+    }
+    macro_rules! this_macro_doesnt_need_vec {
+        ($x:expr) => {{ func_not_needing_vec($x.iter().sum(), $x.iter().sum()) }};
+    }
+
+    // Do not lint the next line
+    this_macro_needs_vec!(vec![1]);
+    this_macro_doesnt_need_vec!(vec![1]);
+    //~^ useless_vec
+
+    macro_rules! m {
+        ($x:expr) => {
+            fn f2() {
+                let _x: Vec<i32> = $x;
+            }
+            fn f() {
+                let _x = $x;
+                $x.starts_with(&[]);
+            }
+        };
+    }
+
+    // should not lint
+    m!(vec![1]);
+}
+
+fn issue_11958() {
+    fn f(_s: &[String]) {}
+
+    // should not lint, `String` is not `Copy`
+    f(&vec!["test".to_owned(); 2]);
+}
+
+fn issue_12101() {
+    for a in &(vec![1, 2]) {}
+    //~^ useless_vec
 }

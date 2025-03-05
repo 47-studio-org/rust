@@ -1,9 +1,7 @@
-// run-pass
-#![feature(repr_simd, platform_intrinsics)]
+//@ run-pass
+#![feature(repr_simd, core_intrinsics)]
 
-extern "platform-intrinsic" {
-    fn simd_cast<T, U>(x: T) -> U;
-}
+use std::intrinsics::simd::simd_cast;
 
 #[derive(Copy, Clone)]
 #[repr(simd)]

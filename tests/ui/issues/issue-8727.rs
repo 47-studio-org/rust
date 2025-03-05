@@ -1,8 +1,7 @@
 // Verify the compiler fails with an error on infinite function
 // recursions.
 
-// build-fail
-// normalize-stderr-test: ".nll/" -> "/"
+//@ build-fail
 
 fn generic<T>() { //~ WARN function cannot return without recursing
     generic::<Option<T>>();

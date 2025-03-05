@@ -5,25 +5,28 @@
 use std::io;
 
 pub fn pub_fn_missing_errors_header() -> Result<(), ()> {
-    //~^ ERROR: docs for function returning `Result` missing `# Errors` section
-    //~| NOTE: `-D clippy::missing-errors-doc` implied by `-D warnings`
+    //~^ missing_errors_doc
+
     unimplemented!();
 }
 
 pub async fn async_pub_fn_missing_errors_header() -> Result<(), ()> {
-    //~^ ERROR: docs for function returning `Result` missing `# Errors` section
+    //~^ missing_errors_doc
+
     unimplemented!();
 }
 
 /// This is not sufficiently documented.
 pub fn pub_fn_returning_io_result() -> io::Result<()> {
-    //~^ ERROR: docs for function returning `Result` missing `# Errors` section
+    //~^ missing_errors_doc
+
     unimplemented!();
 }
 
 /// This is not sufficiently documented.
 pub async fn async_pub_fn_returning_io_result() -> io::Result<()> {
-    //~^ ERROR: docs for function returning `Result` missing `# Errors` section
+    //~^ missing_errors_doc
+
     unimplemented!();
 }
 
@@ -54,13 +57,15 @@ pub struct Struct1;
 impl Struct1 {
     /// This is not sufficiently documented.
     pub fn pub_method_missing_errors_header() -> Result<(), ()> {
-        //~^ ERROR: docs for function returning `Result` missing `# Errors` section
+        //~^ missing_errors_doc
+
         unimplemented!();
     }
 
     /// This is not sufficiently documented.
     pub async fn async_pub_method_missing_errors_header() -> Result<(), ()> {
-        //~^ ERROR: docs for function returning `Result` missing `# Errors` section
+        //~^ missing_errors_doc
+
         unimplemented!();
     }
 
@@ -85,16 +90,42 @@ impl Struct1 {
     async fn async_priv_method_missing_errors_header() -> Result<(), ()> {
         unimplemented!();
     }
+
+    /**
+    # Errors
+    A description of the errors goes here.
+    */
+    fn block_comment() -> Result<(), ()> {
+        unimplemented!();
+    }
+
+    /**
+     * # Errors
+     * A description of the errors goes here.
+     */
+    fn block_comment_leading_asterisks() -> Result<(), ()> {
+        unimplemented!();
+    }
+
+    #[doc(hidden)]
+    fn doc_hidden() -> Result<(), ()> {
+        unimplemented!();
+    }
 }
 
 pub trait Trait1 {
     /// This is not sufficiently documented.
     fn trait_method_missing_errors_header() -> Result<(), ()>;
-    //~^ ERROR: docs for function returning `Result` missing `# Errors` section
+    //~^ missing_errors_doc
 
     /// # Errors
     /// A description of the errors goes here.
     fn trait_method_with_errors_header() -> Result<(), ()>;
+
+    #[doc(hidden)]
+    fn doc_hidden() -> Result<(), ()> {
+        unimplemented!();
+    }
 }
 
 impl Trait1 for Struct1 {
@@ -105,6 +136,11 @@ impl Trait1 for Struct1 {
     fn trait_method_with_errors_header() -> Result<(), ()> {
         unimplemented!();
     }
+}
+
+#[doc(hidden)]
+pub trait DocHidden {
+    fn f() -> Result<(), ()>;
 }
 
 fn main() -> Result<(), ()> {

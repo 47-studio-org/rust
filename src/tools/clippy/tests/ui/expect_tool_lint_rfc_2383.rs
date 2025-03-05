@@ -1,4 +1,3 @@
-#![feature(lint_reasons)]
 //! This file tests the `#[expect]` attribute implementation for tool lints. The same
 //! file is used to test clippy and rustdoc. Any changes to this file should be synced
 //! to the other test files as well.
@@ -20,12 +19,8 @@ mod rustc_ok {
     pub fn rustc_lints() {
         let x = 42.0;
 
-        #[expect(illegal_floating_point_literal_pattern)]
-        match x {
-            5.0 => {}
-            6.0 => {}
-            _ => {}
-        }
+        #[expect(invalid_nan_comparisons)]
+        let _b = x == f32::NAN;
     }
 }
 
@@ -35,16 +30,15 @@ mod rustc_warn {
     #[expect(dead_code)]
     //~^ ERROR: this lint expectation is unfulfilled
     //~| NOTE: `-D unfulfilled-lint-expectations` implied by `-D warnings`
+    //~| HELP: to override `-D warnings` add `#[allow(unfulfilled_lint_expectations)]`
     pub fn rustc_lints() {
         let x = 42;
 
-        #[expect(illegal_floating_point_literal_pattern)]
+        #[expect(invalid_nan_comparisons)]
         //~^ ERROR: this lint expectation is unfulfilled
-        match x {
-            5 => {}
-            6 => {}
-            _ => {}
-        }
+        //~| NOTE: duplicate diagnostic emitted due to `-Z deduplicate-diagnostics=no`
+        //~| ERROR: this lint expectation is unfulfilled
+        let _b = x == 5;
     }
 }
 

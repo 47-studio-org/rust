@@ -1,4 +1,5 @@
 //@aux-build: proc_macros.rs
+
 #![warn(clippy::single_match_else)]
 #![allow(unused, clippy::needless_return, clippy::no_effect, clippy::uninlined_format_args)]
 extern crate proc_macros;
@@ -20,6 +21,7 @@ fn unwrap_addr() -> Option<&'static ExprNode> {
             None
         },
     };
+    //~^^^^^^^ single_match_else
 
     // Don't lint
     with_span!(span match ExprNode::Butterflies {
@@ -85,6 +87,7 @@ fn main() {
             return
         },
     }
+    //~^^^^^^^ single_match_else
 
     // lint here
     match Some(1) {
@@ -94,16 +97,18 @@ fn main() {
             return;
         },
     }
+    //~^^^^^^^ single_match_else
 
     // lint here
     use std::convert::Infallible;
-    match Result::<i32, Infallible>::Ok(1) {
+    match Result::<i32, &Infallible>::Ok(1) {
         Ok(a) => println!("${:?}", a),
         Err(_) => {
             println!("else block");
             return;
         }
     }
+    //~^^^^^^^ single_match_else
 
     use std::borrow::Cow;
     match Cow::from("moo") {
@@ -113,6 +118,7 @@ fn main() {
             return;
         }
     }
+    //~^^^^^^^ single_match_else
 }
 
 fn issue_10808(bar: Option<i32>) {
@@ -126,6 +132,7 @@ fn issue_10808(bar: Option<i32>) {
             println!("None2");
         },
     }
+    //~^^^^^^^^^^ single_match_else
 
     match bar {
         Some(v) => {
@@ -138,6 +145,7 @@ fn issue_10808(bar: Option<i32>) {
             println!("{}", *r);
         },
     }
+    //~^^^^^^^^^^^ single_match_else
 
     match bar {
         Some(v) => unsafe {
@@ -150,6 +158,7 @@ fn issue_10808(bar: Option<i32>) {
             println!("{}", *r);
         },
     }
+    //~^^^^^^^^^^^ single_match_else
 
     match bar {
         #[rustfmt::skip]
@@ -164,6 +173,7 @@ fn issue_10808(bar: Option<i32>) {
             println!("None");
         },
     }
+    //~^^^^^^^^^^^^^ single_match_else
 
     match bar {
         Some(v) => {
@@ -197,4 +207,15 @@ fn issue_10808(bar: Option<i32>) {
             }
         },
     }
+}
+
+fn irrefutable_match() -> Option<&'static ExprNode> {
+    match ExprNode::Butterflies {
+        ExprNode::Butterflies => Some(&NODE),
+        _ => {
+            let x = 5;
+            None
+        },
+    }
+    //~^^^^^^^ single_match_else
 }

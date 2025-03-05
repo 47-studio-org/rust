@@ -107,9 +107,9 @@ fn valid_examples() {
 
     // Let's test empty blocks
     if false {
-        //~^ ERROR: this `if` has identical blocks
     } else {
     }
+    //~^^^ if_same_then_else
 }
 
 /// This makes sure that the `if_same_then_else` masks the `shared_code_in_if_blocks` lint
@@ -119,7 +119,6 @@ fn trigger_other_lint() {
 
     // Same block
     if x == 0 {
-        //~^ ERROR: this `if` has identical blocks
         let u = 19;
         println!("How are u today?");
         let _ = "This is a string";
@@ -128,38 +127,35 @@ fn trigger_other_lint() {
         println!("How are u today?");
         let _ = "This is a string";
     }
+    //~^^^^^^^^^ if_same_then_else
 
     // Only same expression
     let _ = if x == 6 { 7 } else { 7 };
-    //~^ ERROR: this `if` has identical blocks
+    //~^ if_same_then_else
 
     // Same in else if block
     let _ = if x == 67 {
         println!("Well I'm the most important block");
         "I'm a pretty string"
     } else if x == 68 {
-        //~^ ERROR: this `if` has identical blocks
         println!("I'm a doppelgänger");
-        // Don't listen to my clone below
 
         if y == 90 { "=^.^=" } else { ":D" }
     } else {
-        // Don't listen to my clone above
         println!("I'm a doppelgänger");
 
         if y == 90 { "=^.^=" } else { ":D" }
     };
+    //~^^^^^^^^^ if_same_then_else
 
     if x == 0 {
         println!("I'm single");
     } else if x == 68 {
-        //~^ ERROR: this `if` has identical blocks
         println!("I'm a doppelgänger");
-        // Don't listen to my clone below
     } else {
-        // Don't listen to my clone above
         println!("I'm a doppelgänger");
     }
+    //~^^^^^ if_same_then_else
 }
 
 fn main() {}

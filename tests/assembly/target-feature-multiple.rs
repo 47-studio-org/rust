@@ -1,9 +1,10 @@
-// assembly-output: emit-asm
-// needs-llvm-components: x86
-// revisions: TWOFLAGS SINGLEFLAG
-// compile-flags: --target=x86_64-unknown-linux-gnu
-// [TWOFLAGS] compile-flags: -C target-feature=+rdrnd -C target-feature=+rdseed
-// [SINGLEFLAG] compile-flags: -C target-feature=+rdrnd,+rdseed
+//@ add-core-stubs
+//@ assembly-output: emit-asm
+//@ needs-llvm-components: x86
+//@ revisions: TWOFLAGS SINGLEFLAG
+//@ compile-flags: --target=x86_64-unknown-linux-gnu
+//@ [TWOFLAGS] compile-flags: -C target-feature=+rdrnd -C target-feature=+rdseed
+//@ [SINGLEFLAG] compile-flags: -C target-feature=+rdrnd,+rdseed
 
 // Target features set via flags aren't necessarily reflected in the IR, so the only way to test
 // them is to build code that requires the features to be enabled to work.
@@ -19,11 +20,8 @@
 #![crate_type = "lib"]
 #![no_core]
 
-#[lang = "sized"]
-trait Sized {}
-#[lang = "copy"]
-trait Copy {}
-impl Copy for u32 {}
+extern crate minicore;
+use minicore::*;
 
 // Use of these requires target features to be enabled
 extern "unadjusted" {

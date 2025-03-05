@@ -15,9 +15,9 @@ help: ensure that all possible cases are being handled by adding a match arm wit
    |
 LL ~     match a {
 LL +         _ => todo!(),
-LL +     }
+LL ~     }
    |
 
-error: aborting due to previous error
+error: aborting due to 1 previous error
 
 For more information about this error, try `rustc --explain E0004`.

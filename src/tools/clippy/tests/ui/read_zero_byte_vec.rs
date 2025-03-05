@@ -8,6 +8,7 @@ use std::fs::File;
 use std::io;
 use std::io::prelude::*;
 //@no-rustfix
+//@require-annotations-for-level: WARN
 extern crate futures;
 use futures::io::{AsyncRead, AsyncReadExt};
 use tokio::io::{AsyncRead as TokioAsyncRead, AsyncReadExt as _, AsyncWrite as TokioAsyncWrite, AsyncWriteExt as _};
@@ -56,14 +57,6 @@ fn test() -> io::Result<()> {
     f.read(&mut buf)?;
 
     // should not lint
-    let mut empty = vec![];
-    let mut data7 = vec![];
-    f.read(&mut empty);
-
-    // should not lint
-    f.read(&mut data7);
-
-    // should not lint
     let mut data8 = Vec::new();
     data8.resize(100, 0);
     f.read_exact(&mut data8)?;
@@ -71,6 +64,27 @@ fn test() -> io::Result<()> {
     // should not lint
     let mut data9 = vec![1, 2, 3];
     f.read_exact(&mut data9)?;
+
+    Ok(())
+}
+
+fn test_nested() -> io::Result<()> {
+    let cap = 1000;
+    let mut f = File::open("foo.txt").unwrap();
+
+    // Issue #9274
+    // Should not lint
+    let mut v = Vec::new();
+    {
+        v.resize(10, 0);
+        f.read(&mut v)?;
+    }
+
+    let mut v = Vec::new();
+    {
+        f.read(&mut v)?;
+        //~^ ERROR: reading zero byte data to `Vec`
+    }
 
     Ok(())
 }
@@ -97,6 +111,12 @@ async fn test_tokio<R: TokioAsyncRead + Unpin>(r: &mut R) {
     let mut data2 = Vec::new();
     r.read_exact(&mut data2).await.unwrap();
     //~^ ERROR: reading zero byte data to `Vec`
+}
+
+fn allow_works<F: std::io::Read>(mut f: F) {
+    let mut data = Vec::with_capacity(100);
+    #[allow(clippy::read_zero_byte_vec)]
+    f.read(&mut data).unwrap();
 }
 
 fn main() {}

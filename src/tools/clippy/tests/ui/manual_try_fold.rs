@@ -57,13 +57,16 @@ fn main() {
     [1, 2, 3]
         .iter()
         .fold(Some(0i32), |sum, i| sum?.checked_add(*i))
+        //~^ manual_try_fold
         .unwrap();
     [1, 2, 3]
         .iter()
         .fold(NotOption(0i32, 0i32), |sum, i| NotOption(0i32, 0i32));
+    //~^ manual_try_fold
     [1, 2, 3]
         .iter()
         .fold(NotOptionButWorse(0i32), |sum, i| NotOptionButWorse(0i32));
+    //~^ manual_try_fold
     // Do not lint
     [1, 2, 3].iter().try_fold(0i32, |sum, i| sum.checked_add(*i)).unwrap();
     [1, 2, 3].iter().fold(0i32, |sum, i| sum + i);
@@ -94,5 +97,36 @@ fn msrv_juust_right() {
     [1, 2, 3]
         .iter()
         .fold(Some(0i32), |sum, i| sum?.checked_add(*i))
+        //~^ manual_try_fold
         .unwrap();
+}
+
+mod issue11876 {
+    struct Foo;
+
+    impl Bar for Foo {
+        type Output = u32;
+    }
+
+    trait Bar: Sized {
+        type Output;
+        fn fold<A, F>(self, init: A, func: F) -> Fold<Self, A, F>
+        where
+            A: Clone,
+            F: Fn(A, Self::Output) -> A,
+        {
+            Fold { this: self, init, func }
+        }
+    }
+
+    #[allow(dead_code)]
+    struct Fold<S, A, F> {
+        this: S,
+        init: A,
+        func: F,
+    }
+
+    fn main() {
+        Foo.fold(Some(0), |acc, entry| Some(acc? + entry));
+    }
 }

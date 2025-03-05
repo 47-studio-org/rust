@@ -85,8 +85,23 @@ pub struct Hidden;
 pub use self::Hidden as InlinedHidden;
 ```
 
-The same applies on re-exports themselves: if you have multiple re-exports and some of them have
-`#[doc(hidden)]`, then these ones (and only these) own't appear in the documentation:
+However, if you still want the re-export itself to be visible, you can add the `#[doc(inline)]`
+attribute on it:
+
+```rust,ignore (inline)
+// This struct won't be visible.
+#[doc(hidden)]
+pub struct Hidden;
+
+#[doc(inline)]
+pub use self::Hidden as InlinedHidden;
+```
+
+In this case, you will have `pub use self::Hidden as InlinedHidden;` in the generated documentation
+but no link to the `Hidden` item.
+
+So back to `#[doc(hidden)]`: if you have multiple re-exports and some of them have
+`#[doc(hidden)]`, then these ones (and only these) won't appear in the documentation:
 
 ```rust,ignore (inline)
 mod private_mod {
@@ -170,3 +185,32 @@ There are a few attributes which are not inlined though:
 
 All other attributes are inherited when inlined, so that the documentation matches the behavior if
 the inlined item was directly defined at the spot where it's shown.
+
+These rules also apply if the item is inlined with a glob re-export:
+
+```rust,ignore (inline)
+mod private_mod {
+    /// First
+    #[cfg(a)]
+    pub struct InPrivate;
+}
+
+#[cfg(c)]
+pub use self::private_mod::*;
+```
+
+Otherwise, the attributes displayed will be from the re-exported item and the attributes on the
+re-export itself will be ignored:
+
+```rust,ignore (inline)
+mod private_mod {
+    /// First
+    #[cfg(a)]
+    pub struct InPrivate;
+}
+
+#[cfg(c)]
+pub use self::private_mod::InPrivate;
+```
+
+In the above case, `cfg(c)` will not be displayed in the docs.

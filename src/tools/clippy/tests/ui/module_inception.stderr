@@ -1,5 +1,5 @@
 error: module has the same name as its containing module
-  --> $DIR/module_inception.rs:5:9
+  --> tests/ui/module_inception.rs:5:9
    |
 LL | /         pub mod bar2 {
 LL | |
@@ -12,27 +12,30 @@ LL | |         }
    = help: to override `-D warnings` add `#[allow(clippy::module_inception)]`
 
 error: module has the same name as its containing module
-  --> $DIR/module_inception.rs:12:5
+  --> tests/ui/module_inception.rs:12:5
    |
 LL | /     pub mod foo2 {
+LL | |
 LL | |
 LL | |         pub mod bar2 {}
 LL | |     }
    | |_____^
 
 error: module has the same name as its containing module
-  --> $DIR/module_inception.rs:20:9
+  --> tests/ui/module_inception.rs:21:9
    |
 LL | /         mod bar {
+LL | |
 LL | |
 LL | |             mod foo {}
 LL | |         }
    | |_________^
 
 error: module has the same name as its containing module
-  --> $DIR/module_inception.rs:26:5
+  --> tests/ui/module_inception.rs:28:5
    |
 LL | /     mod foo {
+LL | |
 LL | |
 LL | |         mod bar {}
 LL | |     }

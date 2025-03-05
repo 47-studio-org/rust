@@ -1,8 +1,8 @@
-// only-x86_64
-// compile-flags: -Copt-level=3
+//@ only-x86_64
+// Set the base cpu explicitly, in case the default has been changed.
+//@ compile-flags: -Copt-level=3 -Ctarget-cpu=x86-64
 
 #![crate_type = "lib"]
-#![feature(target_feature_11)]
 
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
@@ -31,3 +31,7 @@ unsafe fn without_avx(x: __m256) -> __m256 {
     };
     add(x, x)
 }
+
+// Don't allow the above CHECK-NOT to accidentally match a commit hash in the
+// compiler version.
+// CHECK-LABEL: rustc version

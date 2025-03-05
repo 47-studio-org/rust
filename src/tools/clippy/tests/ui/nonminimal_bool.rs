@@ -1,6 +1,10 @@
 //@no-rustfix: overlapping suggestions
-#![feature(lint_reasons)]
-#![allow(unused, clippy::diverging_sub_expression, clippy::needless_if)]
+#![allow(
+    unused,
+    clippy::diverging_sub_expression,
+    clippy::needless_if,
+    clippy::redundant_pattern_matching
+)]
 #![warn(clippy::nonminimal_bool)]
 #![allow(clippy::useless_vec)]
 
@@ -11,23 +15,28 @@ fn main() {
     let d: bool = unimplemented!();
     let e: bool = unimplemented!();
     let _ = !true;
-    //~^ ERROR: this boolean expression can be simplified
-    //~| NOTE: `-D clippy::nonminimal-bool` implied by `-D warnings`
+    //~^ nonminimal_bool
+
     let _ = !false;
-    //~^ ERROR: this boolean expression can be simplified
+    //~^ nonminimal_bool
+
     let _ = !!a;
-    //~^ ERROR: this boolean expression can be simplified
+    //~^ nonminimal_bool
+
     let _ = false || a;
-    //~^ ERROR: this boolean expression can be simplified
+    //~^ nonminimal_bool
+
     // don't lint on cfgs
     let _ = cfg!(you_shall_not_not_pass) && a;
     let _ = a || !b || !c || !d || !e;
     let _ = !(!a && b);
-    //~^ ERROR: this boolean expression can be simplified
+    //~^ nonminimal_bool
+
     let _ = !(!a || b);
-    //~^ ERROR: this boolean expression can be simplified
+    //~^ nonminimal_bool
+
     let _ = !a && !(b && c);
-    //~^ ERROR: this boolean expression can be simplified
+    //~^ nonminimal_bool
 }
 
 fn equality_stuff() {
@@ -36,15 +45,19 @@ fn equality_stuff() {
     let c: i32 = unimplemented!();
     let d: i32 = unimplemented!();
     let _ = a == b && c == 5 && a == b;
-    //~^ ERROR: this boolean expression can be simplified
+    //~^ nonminimal_bool
+
     let _ = a == b || c == 5 || a == b;
-    //~^ ERROR: this boolean expression can be simplified
+    //~^ nonminimal_bool
+
     let _ = a == b && c == 5 && b == a;
-    //~^ ERROR: this boolean expression can be simplified
+    //~^ nonminimal_bool
+
     let _ = a != b || !(a != b || c == d);
-    //~^ ERROR: this boolean expression can be simplified
+    //~^ nonminimal_bool
+
     let _ = a != b && !(a != b && c == d);
-    //~^ ERROR: this boolean expression can be simplified
+    //~^ nonminimal_bool
 }
 
 fn issue3847(a: u32, b: u32) -> bool {
@@ -75,7 +88,8 @@ fn check_expect() {
 
 fn issue9428() {
     if matches!(true, true) && true {
-        //~^ ERROR: this boolean expression can be simplified
+        //~^ nonminimal_bool
+
         println!("foo");
     }
 }
@@ -139,4 +153,66 @@ fn issue10836() {
 
     // Should not lint
     let _: bool = !!Foo(true);
+}
+
+fn issue11932() {
+    let x: i32 = unimplemented!();
+
+    #[allow(clippy::nonminimal_bool)]
+    let _ = x % 2 == 0 || {
+        // Should not lint
+        assert!(x > 0);
+        x % 3 == 0
+    };
+}
+
+fn issue_5794() {
+    let a = 0;
+    if !(12 == a) {}
+    //~^ nonminimal_bool
+    if !(a == 12) {}
+    //~^ nonminimal_bool
+    if !(12 != a) {}
+    //~^ nonminimal_bool
+    if !(a != 12) {}
+    //~^ nonminimal_bool
+
+    let b = true;
+    let c = false;
+    if !b == true {}
+    //~^ nonminimal_bool
+    //~| bool_comparison
+    //~| bool_comparison
+    if !b != true {}
+    //~^ nonminimal_bool
+    //~| bool_comparison
+    if true == !b {}
+    //~^ nonminimal_bool
+    //~| bool_comparison
+    //~| bool_comparison
+    if true != !b {}
+    //~^ nonminimal_bool
+    //~| bool_comparison
+    if !b == !c {}
+    //~^ nonminimal_bool
+    if !b != !c {}
+    //~^ nonminimal_bool
+}
+
+fn issue_12371(x: usize) -> bool {
+    // Should not warn!
+    !x != 0
+}
+
+// Not linted because it is slow to do so
+// https://github.com/rust-lang/rust-clippy/issues/13206
+fn many_ops(a: bool, b: bool, c: bool, d: bool, e: bool, f: bool) -> bool {
+    (a && c && f) || (!a && b && !d) || (!b && !c && !e) || (d && e && !f)
+}
+
+fn issue14184(a: f32, b: bool) {
+    if !(a < 2.0 && !b) {
+        //~^ nonminimal_bool
+        println!("Hi");
+    }
 }

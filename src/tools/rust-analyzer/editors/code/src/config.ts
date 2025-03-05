@@ -2,46 +2,39 @@ import * as Is from "vscode-languageclient/lib/common/utils/is";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
-import type { Env } from "./client";
-import { log } from "./util";
-import { expectNotUndefined, unwrapUndefinable } from "./undefinable";
+import { expectNotUndefined, log, unwrapUndefinable } from "./util";
+import type { Env } from "./util";
+import type { Disposable } from "vscode";
 
 export type RunnableEnvCfgItem = {
     mask?: string;
     env: Record<string, string>;
     platform?: string | string[];
 };
-export type RunnableEnvCfg = undefined | Record<string, string> | RunnableEnvCfgItem[];
+export type RunnableEnvCfg = Record<string, string> | RunnableEnvCfgItem[];
+
+type ShowStatusBar = "always" | "never" | { documentSelector: vscode.DocumentSelector };
 
 export class Config {
     readonly extensionId = "rust-lang.rust-analyzer";
     configureLang: vscode.Disposable | undefined;
 
     readonly rootSection = "rust-analyzer";
-    private readonly requiresReloadOpts = [
+    private readonly requiresServerReloadOpts = [
         "cargo",
         "procMacro",
         "serverPath",
         "server",
         "files",
+        "cfg",
     ].map((opt) => `${this.rootSection}.${opt}`);
 
-    readonly package: {
-        version: string;
-        releaseTag: string | null;
-        enableProposedApi: boolean | undefined;
-    } = vscode.extensions.getExtension(this.extensionId)!.packageJSON;
+    private readonly requiresWindowReloadOpts = ["testExplorer"].map(
+        (opt) => `${this.rootSection}.${opt}`,
+    );
 
-    readonly globalStorageUri: vscode.Uri;
-
-    constructor(ctx: vscode.ExtensionContext) {
-        this.globalStorageUri = ctx.globalStorageUri;
-        this.discoveredWorkspaces = [];
-        vscode.workspace.onDidChangeConfiguration(
-            this.onDidChangeConfiguration,
-            this,
-            ctx.subscriptions,
-        );
+    constructor(disposables: Disposable[]) {
+        vscode.workspace.onDidChangeConfiguration(this.onDidChangeConfiguration, this, disposables);
         this.refreshLogging();
         this.configureLanguage();
     }
@@ -51,32 +44,45 @@ export class Config {
     }
 
     private refreshLogging() {
-        log.setEnabled(this.traceExtension ?? false);
-        log.info("Extension version:", this.package.version);
+        log.info(
+            "Extension version:",
+            vscode.extensions.getExtension(this.extensionId)!.packageJSON.version,
+        );
 
         const cfg = Object.entries(this.cfg).filter(([_, val]) => !(val instanceof Function));
         log.info("Using configuration", Object.fromEntries(cfg));
     }
-
-    public discoveredWorkspaces: JsonProject[];
 
     private async onDidChangeConfiguration(event: vscode.ConfigurationChangeEvent) {
         this.refreshLogging();
 
         this.configureLanguage();
 
-        const requiresReloadOpt = this.requiresReloadOpts.find((opt) =>
+        const requiresWindowReloadOpt = this.requiresWindowReloadOpts.find((opt) =>
             event.affectsConfiguration(opt),
         );
 
-        if (!requiresReloadOpt) return;
+        if (requiresWindowReloadOpt) {
+            const message = `Changing "${requiresWindowReloadOpt}" requires a window reload`;
+            const userResponse = await vscode.window.showInformationMessage(message, "Reload now");
+
+            if (userResponse) {
+                await vscode.commands.executeCommand("workbench.action.reloadWindow");
+            }
+        }
+
+        const requiresServerReloadOpt = this.requiresServerReloadOpts.find((opt) =>
+            event.affectsConfiguration(opt),
+        );
+
+        if (!requiresServerReloadOpt) return;
 
         if (this.restartServerOnConfigChange) {
             await vscode.commands.executeCommand("rust-analyzer.restartServer");
             return;
         }
 
-        const message = `Changing "${requiresReloadOpt}" requires a server restart`;
+        const message = `Changing "${requiresServerReloadOpt}" requires a server restart`;
         const userResponse = await vscode.window.showInformationMessage(message, "Restart now");
 
         if (userResponse) {
@@ -134,13 +140,13 @@ export class Config {
                 {
                     // Parent doc single-line comment
                     // e.g. //!|
-                    beforeText: /^\s*\/{2}\!.*$/,
+                    beforeText: /^\s*\/{2}!.*$/,
                     action: { indentAction, appendText: "//! " },
                 },
                 {
                     // Begins an auto-closed multi-line comment (standard or parent doc)
                     // e.g. /** | */ or /*! | */
-                    beforeText: /^\s*\/\*(\*|\!)(?!\/)([^\*]|\*(?!\/))*$/,
+                    beforeText: /^\s*\/\*(\*|!)(?!\/)([^*]|\*(?!\/))*$/,
                     afterText: /^\s*\*\/$/,
                     action: {
                         indentAction: vscode.IndentAction.IndentOutdent,
@@ -150,19 +156,19 @@ export class Config {
                 {
                     // Begins a multi-line comment (standard or parent doc)
                     // e.g. /** ...| or /*! ...|
-                    beforeText: /^\s*\/\*(\*|\!)(?!\/)([^\*]|\*(?!\/))*$/,
+                    beforeText: /^\s*\/\*(\*|!)(?!\/)([^*]|\*(?!\/))*$/,
                     action: { indentAction, appendText: " * " },
                 },
                 {
                     // Continues a multi-line comment
                     // e.g.  * ...|
-                    beforeText: /^(\ \ )*\ \*(\ ([^\*]|\*(?!\/))*)?$/,
+                    beforeText: /^( {2})* \*( ([^*]|\*(?!\/))*)?$/,
                     action: { indentAction, appendText: "* " },
                 },
                 {
                     // Dedents after closing a multi-line comment
                     // e.g.  */|
-                    beforeText: /^(\ \ )*\ \*\/\s*$/,
+                    beforeText: /^( {2})* \*\/\s*$/,
                     action: { indentAction, removeText: 1 },
                 },
             ];
@@ -216,9 +222,11 @@ export class Config {
             ),
         );
     }
+
     get checkOnSave() {
         return this.get<boolean>("checkOnSave") ?? false;
     }
+
     async toggleCheckOnSave() {
         const config = this.cfg.inspect<boolean>("checkOnSave") ?? { key: "checkOnSave" };
         let overrideInLanguage;
@@ -249,25 +257,19 @@ export class Config {
         await this.cfg.update("checkOnSave", !(value || false), target || null, overrideInLanguage);
     }
 
-    get traceExtension() {
-        return this.get<boolean>("trace.extension");
-    }
-
-    get discoverProjectCommand() {
-        return this.get<string[] | undefined>("discoverProjectCommand");
-    }
-
     get problemMatcher(): string[] {
         return this.get<string[]>("runnables.problemMatcher") || [];
     }
 
-    get cargoRunner() {
-        return this.get<string | undefined>("cargoRunner");
+    get testExplorer() {
+        return this.get<boolean | undefined>("testExplorer");
     }
 
-    get runnablesExtraEnv() {
+    runnablesExtraEnv(label: string): Record<string, string> | undefined {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const item = this.get<any>("runnables.extraEnv") ?? this.get<any>("runnableEnv");
-        if (!item) return item;
+        if (!item) return undefined;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const fixRecord = (r: Record<string, any>) => {
             for (const key in r) {
                 if (typeof r[key] !== "string") {
@@ -275,11 +277,28 @@ export class Config {
                 }
             }
         };
+
+        const platform = process.platform;
+        const checkPlatform = (it: RunnableEnvCfgItem) => {
+            if (it.platform) {
+                const platforms = Array.isArray(it.platform) ? it.platform : [it.platform];
+                return platforms.indexOf(platform) >= 0;
+            }
+            return true;
+        };
+
         if (item instanceof Array) {
-            item.forEach((x) => fixRecord(x.env));
-        } else {
-            fixRecord(item);
+            const env = {};
+            for (const it of item) {
+                const masked = !it.mask || new RegExp(it.mask).test(label);
+                if (masked && checkPlatform(it)) {
+                    Object.assign(env, it.env);
+                }
+            }
+            fixRecord(env);
+            return env;
         }
+        fixRecord(item);
         return item;
     }
 
@@ -304,6 +323,7 @@ export class Config {
             engine: this.get<string>("debug.engine"),
             engineSettings: this.get<object>("debug.engineSettings") ?? {},
             openDebugPane: this.get<boolean>("debug.openDebugPane"),
+            buildBeforeRestart: this.get<boolean>("debug.buildBeforeRestart"),
             sourceFileMap: sourceFileMap,
         };
     }
@@ -318,6 +338,7 @@ export class Config {
             gotoTypeDef: this.get<boolean>("hover.actions.gotoTypeDef.enable"),
         };
     }
+
     get previewRustcOutput() {
         return this.get<boolean>("diagnostics.previewRustcOutput");
     }
@@ -329,34 +350,46 @@ export class Config {
     get showDependenciesExplorer() {
         return this.get<boolean>("showDependenciesExplorer");
     }
+
+    get showSyntaxTree() {
+        return this.get<boolean>("showSyntaxTree");
+    }
+
+    get statusBarClickAction() {
+        return this.get<string>("statusBar.clickAction");
+    }
+
+    get statusBarShowStatusBar() {
+        return this.get<ShowStatusBar>("statusBar.showStatusBar");
+    }
+
+    get initializeStopped() {
+        return this.get<boolean>("initializeStopped");
+    }
+
+    get askBeforeUpdateTest() {
+        return this.get<boolean>("runnables.askBeforeUpdateTest");
+    }
+
+    async setAskBeforeUpdateTest(value: boolean) {
+        await this.cfg.update("runnables.askBeforeUpdateTest", value, true);
+    }
 }
 
-// the optional `cb?` parameter is meant to be used to add additional
-// key/value pairs to the VS Code configuration. This needed for, e.g.,
-// including a `rust-project.json` into the `linkedProjects` key as part
-// of the configuration/InitializationParams _without_ causing VS Code
-// configuration to be written out to workspace-level settings. This is
-// undesirable behavior because rust-project.json files can be tens of
-// thousands of lines of JSON, most of which is not meant for humans
-// to interact with.
-export function prepareVSCodeConfig<T>(
-    resp: T,
-    cb?: (key: Extract<keyof T, string>, res: { [key: string]: any }) => void,
-): T {
+export function prepareVSCodeConfig<T>(resp: T): T {
     if (Is.string(resp)) {
         return substituteVSCodeVariableInString(resp) as T;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } else if (resp && Is.array<any>(resp)) {
         return resp.map((val) => {
             return prepareVSCodeConfig(val);
         }) as T;
     } else if (resp && typeof resp === "object") {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const res: { [key: string]: any } = {};
         for (const key in resp) {
             const val = resp[key];
             res[key] = prepareVSCodeConfig(val);
-            if (cb) {
-                cb(key, res);
-            }
         }
         return res as T;
     }
@@ -459,8 +492,7 @@ function computeVscodeVar(varName: string): string | null {
         // TODO: support for remote workspaces?
         const fsPath: string =
             folder === undefined
-                ? // no workspace opened
-                  ""
+                ? "" // no workspace opened
                 : // could use currently opened document to detect the correct
                   // workspace. However, that would be determined by the document
                   // user has opened on Editor startup. Could lead to

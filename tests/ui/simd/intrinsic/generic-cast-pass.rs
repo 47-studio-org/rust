@@ -1,11 +1,8 @@
-// run-pass
-// ignore-emscripten FIXME(#45351) hits an LLVM assert
+//@ run-pass
 
-#![feature(repr_simd, platform_intrinsics)]
+#![feature(repr_simd, core_intrinsics)]
 
-extern "platform-intrinsic" {
-    fn simd_cast<T, U>(x: T) -> U;
-}
+use std::intrinsics::simd::simd_cast;
 
 use std::cmp::{max, min};
 

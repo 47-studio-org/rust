@@ -1,6 +1,7 @@
+//@ check-pass
+
 #![warn(clippy::useless_conversion)]
 
-use std::iter::FromIterator;
 use std::option::IntoIter as OptionIter;
 
 fn eq<T: Eq>(a: T, b: T) -> bool {

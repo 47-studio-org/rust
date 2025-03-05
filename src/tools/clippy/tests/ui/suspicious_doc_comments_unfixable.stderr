@@ -1,5 +1,5 @@
 error: this is an outer doc comment and does not apply to the parent module or crate
-  --> $DIR/suspicious_doc_comments_unfixable.rs:4:1
+  --> tests/ui/suspicious_doc_comments_unfixable.rs:4:1
    |
 LL | / ///! a
 LL | |
@@ -22,9 +22,10 @@ LL + //! d
    |
 
 error: this is an outer doc comment and does not apply to the parent module or crate
-  --> $DIR/suspicious_doc_comments_unfixable.rs:12:1
+  --> tests/ui/suspicious_doc_comments_unfixable.rs:12:1
    |
 LL | / ///! a
+LL | |
 LL | |
 LL | | ///! b
 LL | | /// c
@@ -34,6 +35,7 @@ LL | | ///! d
 help: use an inner doc comment to document the parent module or crate
    |
 LL + //! a
+LL |
 LL |
 LL + //! b
 LL | /// c

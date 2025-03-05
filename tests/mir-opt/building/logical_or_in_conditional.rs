@@ -1,4 +1,5 @@
-// compile-flags: -Z validate-mir
+// skip-filecheck
+//@ compile-flags: -Z validate-mir
 #![feature(let_chains)]
 struct Droppy(u8);
 impl Drop for Droppy {
@@ -29,9 +30,13 @@ fn test_or() {
 
 // EMIT_MIR logical_or_in_conditional.test_complex.built.after.mir
 fn test_complex() {
-    if let E::A(_) = E::f() && ((always_true() && Droppy(0).0 > 0) || Droppy(1).0 > 1) {}
+    if let E::A(_) = E::f()
+        && ((always_true() && Droppy(0).0 > 0) || Droppy(1).0 > 1)
+    {}
 
-    if !always_true() && let E::B = E::f() {}
+    if !always_true()
+        && let E::B = E::f()
+    {}
 }
 
 fn main() {

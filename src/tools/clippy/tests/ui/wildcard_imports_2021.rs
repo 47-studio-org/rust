@@ -11,14 +11,20 @@
 extern crate wildcard_imports_helper;
 
 use crate::fn_mod::*;
+//~^ wildcard_imports
 use crate::mod_mod::*;
+//~^ wildcard_imports
 use crate::multi_fn_mod::*;
+//~^ wildcard_imports
 use crate::struct_mod::*;
+//~^ wildcard_imports
 
 #[allow(unused_imports)]
 use wildcard_imports_helper::inner::inner_for_self_import::*;
+//~^ wildcard_imports
 use wildcard_imports_helper::prelude::v1::*;
 use wildcard_imports_helper::*;
+//~^ wildcard_imports
 
 use std::io::prelude::*;
 
@@ -64,6 +70,35 @@ mod struct_mod {
     }
 }
 
+// issue 9942
+mod underscore_mod {
+    // allow use of `deref` so that `clippy --fix` includes `Deref`.
+    #![allow(noop_method_call)]
+
+    mod exports_underscore {
+        pub use std::ops::Deref as _;
+        pub fn dummy() {}
+    }
+
+    mod exports_underscore_ish {
+        pub use std::ops::Deref as _Deref;
+        pub fn dummy() {}
+    }
+
+    fn does_not_lint() {
+        use exports_underscore::*;
+        let _ = (&0).deref();
+        dummy();
+    }
+
+    fn does_lint() {
+        use exports_underscore_ish::*;
+        //~^ wildcard_imports
+        let _ = (&0).deref();
+        dummy();
+    }
+}
+
 fn main() {
     foo();
     multi_foo();
@@ -89,13 +124,16 @@ mod in_fn_test {
 
     fn test_intern() {
         use crate::fn_mod::*;
+        //~^ wildcard_imports
 
         foo();
     }
 
     fn test_extern() {
         use wildcard_imports_helper::inner::inner_for_self_import::{self, *};
+        //~^ wildcard_imports
         use wildcard_imports_helper::*;
+        //~^ wildcard_imports
 
         inner_for_self_import::inner_extern_foo();
         inner_extern_foo();
@@ -108,6 +146,8 @@ mod in_fn_test {
     fn test_inner_nested() {
         #[rustfmt::skip]
         use self::{inner::*, inner2::*};
+        //~^ wildcard_imports
+        //~| wildcard_imports
 
         inner_foo();
         inner_bar();
@@ -115,6 +155,7 @@ mod in_fn_test {
 
     fn test_extern_reexported() {
         use wildcard_imports_helper::*;
+        //~^ wildcard_imports
 
         extern_exported();
         let _ = ExternExportedStruct;
@@ -144,6 +185,7 @@ mod in_fn_test {
 
 fn test_reexported() {
     use crate::in_fn_test::*;
+    //~^ wildcard_imports
 
     exported();
     let _ = ExportedStruct;
@@ -153,7 +195,9 @@ fn test_reexported() {
 #[rustfmt::skip]
 fn test_weird_formatting() {
     use crate:: in_fn_test::  * ;
+    //~^ wildcard_imports
     use crate:: fn_mod::
+    //~^ wildcard_imports
         *;
 
     exported();
@@ -165,12 +209,14 @@ mod super_imports {
 
     mod should_be_replaced {
         use super::*;
+        //~^ wildcard_imports
 
         fn with_super() {
             let _ = foofoo();
         }
     }
 
+    #[cfg(test)]
     mod test_should_pass {
         use super::*;
 
@@ -179,6 +225,7 @@ mod super_imports {
         }
     }
 
+    #[cfg(test)]
     mod test_should_pass_inside_function {
         fn with_super_inside_function() {
             use super::*;
@@ -186,6 +233,7 @@ mod super_imports {
         }
     }
 
+    #[cfg(test)]
     mod test_should_pass_further_inside {
         fn insidefoo() {}
         mod inner {
@@ -200,6 +248,7 @@ mod super_imports {
         fn insidefoo() {}
         mod inner {
             use super::*;
+            //~^ wildcard_imports
             fn with_super() {
                 let _ = insidefoo();
             }
@@ -208,6 +257,7 @@ mod super_imports {
 
     mod use_explicit_should_be_replaced {
         use crate::super_imports::*;
+        //~^ wildcard_imports
 
         fn with_explicit() {
             let _ = foofoo();
@@ -217,6 +267,7 @@ mod super_imports {
     mod use_double_super_should_be_replaced {
         mod inner {
             use super::super::*;
+            //~^ wildcard_imports
 
             fn with_double_super() {
                 let _ = foofoo();
@@ -226,6 +277,7 @@ mod super_imports {
 
     mod use_super_explicit_should_be_replaced {
         use super::super::super_imports::*;
+        //~^ wildcard_imports
 
         fn with_super_explicit() {
             let _ = foofoo();
@@ -234,6 +286,7 @@ mod super_imports {
 
     mod attestation_should_be_replaced {
         use super::*;
+        //~^ wildcard_imports
 
         fn with_explicit() {
             let _ = foofoo();

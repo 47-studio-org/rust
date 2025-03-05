@@ -1,4 +1,4 @@
-// edition:2021
+//@ edition:2021
 // gate-test-anonymous_lifetime_in_impl_trait
 // Verify the behaviour of `feature(anonymous_lifetime_in_impl_trait)`.
 
@@ -61,8 +61,9 @@ mod in_path {
 }
 
 // This must not err, as the `&` actually resolves to `'a`.
-fn resolved_anonymous<'a, T>(f: impl Fn(&'a str) -> &T) {
-    f("f")
+fn resolved_anonymous<'a, T: 'a>(f: impl Fn(&'a str) -> &T) {
+    //~^ WARNING elided lifetime has a name
+    f("f");
 }
 
 fn main() {}

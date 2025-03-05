@@ -14,14 +14,15 @@ fn main() {
 
     {
         let writer = lock.write().unwrap();
-        //~^ ERROR: this write lock is used only for reading
-        //~| NOTE: `-D clippy::readonly-write-lock` implied by `-D warnings`
+        //~^ readonly_write_lock
+
         dbg!(&writer);
     }
 
     {
         let writer = lock.write().unwrap();
-        //~^ ERROR: this write lock is used only for reading
+        //~^ readonly_write_lock
+
         accept_i32(*writer);
     }
 
@@ -42,4 +43,8 @@ fn main() {
         *writer2 += 1;
         *writer1 = *writer2;
     }
+}
+
+fn issue12733(rw: &RwLock<()>) {
+    let _write_guard = rw.write().unwrap();
 }

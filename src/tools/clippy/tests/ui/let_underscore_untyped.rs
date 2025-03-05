@@ -49,11 +49,16 @@ with_span!(
 
 fn main() {
     let _ = a();
+    //~^ let_underscore_untyped
     let _ = b(1);
+    //~^ let_underscore_untyped
     let _ = c();
     let _ = d(&1);
+    //~^ let_underscore_untyped
     let _ = e();
+    //~^ let_underscore_untyped
     let _ = f();
+    //~^ let_underscore_untyped
     let _ = g();
     let closure = || {};
 
@@ -73,3 +78,5 @@ fn main() {
     #[allow(clippy::let_underscore_untyped)]
     let _ = a();
 }
+
+async fn dont_lint_async_prototype(_: u8) {}

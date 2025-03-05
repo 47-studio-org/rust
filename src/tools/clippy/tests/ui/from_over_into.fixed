@@ -1,11 +1,13 @@
 #![feature(type_alias_impl_trait)]
 #![warn(clippy::from_over_into)]
+#![allow(non_local_definitions)]
 #![allow(unused)]
 
 // this should throw an error
 struct StringWrapper(String);
 
 impl From<String> for StringWrapper {
+    //~^ from_over_into
     fn from(val: String) -> Self {
         StringWrapper(val)
     }
@@ -14,6 +16,7 @@ impl From<String> for StringWrapper {
 struct SelfType(String);
 
 impl From<String> for SelfType {
+    //~^ from_over_into
     fn from(val: String) -> Self {
         SelfType(String::new())
     }
@@ -29,6 +32,7 @@ impl X {
 struct SelfKeywords;
 
 impl From<X> for SelfKeywords {
+    //~^ from_over_into
     fn from(val: X) -> Self {
         let _ = X;
         let _ = X::FOO;
@@ -41,6 +45,7 @@ impl From<X> for SelfKeywords {
 struct ExplicitPaths(bool);
 
 impl core::convert::From<crate::ExplicitPaths> for bool {
+    //~^ from_over_into
     fn from(mut val: crate::ExplicitPaths) -> Self {
         let in_closure = || val.0;
 
@@ -61,6 +66,7 @@ impl From<String> for A {
 struct PathInExpansion;
 
 impl From<PathInExpansion> for String {
+    //~^ from_over_into
     fn from(val: PathInExpansion) -> Self {
         // non self/Self paths in expansions are fine
         panic!()
@@ -83,9 +89,19 @@ fn msrv_1_41() {
     struct FromOverInto<T>(Vec<T>);
 
     impl<T> From<Vec<T>> for FromOverInto<T> {
+        //~^ from_over_into
         fn from(val: Vec<T>) -> Self {
             FromOverInto(val)
         }
+    }
+}
+
+fn issue_12138() {
+    struct Hello;
+
+    impl From<Hello> for () {
+        //~^ from_over_into
+        fn from(val: Hello) {}
     }
 }
 

@@ -1,7 +1,6 @@
-// revisions: current next
-//[next] compile-flags: -Ztrait-solver=next
-
-#![feature(trait_upcasting)]
+//@ revisions: current next
+//@ ignore-compare-mode-next-solver (explicit revisions)
+//@[next] compile-flags: -Znext-solver
 
 trait Foo: Bar<i32> + Bar<u32> {}
 trait Bar<T> {

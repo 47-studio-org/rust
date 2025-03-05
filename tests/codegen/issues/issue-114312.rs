@@ -1,6 +1,5 @@
-// compile-flags: -O
-// min-llvm-version: 17
-// only-x86_64-unknown-linux-gnu
+//@ compile-flags: -Copt-level=3
+//@ only-x86_64-unknown-linux-gnu
 
 // We want to check that this function does not mis-optimize to loop jumping.
 
@@ -16,7 +15,6 @@ pub enum Expr {
 #[no_mangle]
 pub extern "C" fn issue_114312(expr: Expr) {
     // CHECK-LABEL: @issue_114312(
-    // CHECK-NOT: readonly
     // CHECK-SAME: byval
     // CHECK-NEXT: start:
     // CHECK-NEXT: ret void

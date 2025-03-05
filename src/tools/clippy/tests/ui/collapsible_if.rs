@@ -3,7 +3,8 @@
     clippy::equatable_if_let,
     clippy::needless_if,
     clippy::nonminimal_bool,
-    clippy::eq_op
+    clippy::eq_op,
+    clippy::redundant_pattern_matching
 )]
 
 #[rustfmt::skip]
@@ -16,36 +17,42 @@ fn main() {
             println!("Hello world!");
         }
     }
+    //~^^^^^ collapsible_if
 
     if x == "hello" || x == "world" {
         if y == "world" || y == "hello" {
             println!("Hello world!");
         }
     }
+    //~^^^^^ collapsible_if
 
     if x == "hello" && x == "world" {
         if y == "world" || y == "hello" {
             println!("Hello world!");
         }
     }
+    //~^^^^^ collapsible_if
 
     if x == "hello" || x == "world" {
         if y == "world" && y == "hello" {
             println!("Hello world!");
         }
     }
+    //~^^^^^ collapsible_if
 
     if x == "hello" && x == "world" {
         if y == "world" && y == "hello" {
             println!("Hello world!");
         }
     }
+    //~^^^^^ collapsible_if
 
     if 42 == 1337 {
         if 'a' != 'A' {
             println!("world!")
         }
     }
+    //~^^^^^ collapsible_if
 
     // Works because any if with an else statement cannot be collapsed.
     if x == "hello" {
@@ -102,6 +109,7 @@ fn main() {
             println!("Hello world!");
         }
     }
+    //~^^^^^ collapsible_if
 
     if x == "hello" {
         print!("Hello ");
@@ -159,11 +167,13 @@ fn main() {
     if matches!(true, true) {
         if matches!(true, true) {}
     }
+    //~^^^ collapsible_if
 
     // Issue #9375
     if matches!(true, true) && truth() {
         if matches!(true, true) {}
     }
+    //~^^^ collapsible_if
 
     if true {
         #[cfg(not(teehee))]

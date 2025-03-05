@@ -10,7 +10,11 @@ use time::OffsetDateTime;
 use xshell::{cmd, Shell};
 use zip::{write::FileOptions, DateTime, ZipWriter};
 
-use crate::{date_iso, flags, project_root};
+use crate::{
+    date_iso,
+    flags::{self, Malloc},
+    project_root,
+};
 
 const VERSION_STABLE: &str = "0.3";
 const VERSION_NIGHTLY: &str = "0.4";
@@ -22,6 +26,7 @@ impl flags::Dist {
 
         let project_root = project_root();
         let target = Target::get(&project_root);
+        let allocator = self.allocator();
         let dist = project_root.join("dist");
         sh.remove_path(&dist)?;
         sh.create_dir(&dist)?;
@@ -33,11 +38,11 @@ impl flags::Dist {
                 // A hack to make VS Code prefer nightly over stable.
                 format!("{VERSION_NIGHTLY}.{patch_version}")
             };
-            dist_server(sh, &format!("{version}-standalone"), &target)?;
-            let release_tag = if stable { date_iso(sh)? } else { "nightly".to_string() };
+            dist_server(sh, &format!("{version}-standalone"), &target, allocator, self.zig)?;
+            let release_tag = if stable { date_iso(sh)? } else { "nightly".to_owned() };
             dist_client(sh, &version, &release_tag, &target)?;
         } else {
-            dist_server(sh, "0.0.0-standalone", &target)?;
+            dist_server(sh, "0.0.0-standalone", &target, allocator, self.zig)?;
         }
         Ok(())
     }
@@ -65,15 +70,21 @@ fn dist_client(
             &format!(r#""version": "{version}""#),
         )
         .replace(r#""releaseTag": null"#, &format!(r#""releaseTag": "{release_tag}""#))
-        .replace(r#""$generated-start": {},"#, "")
-        .replace(",\n                \"$generated-end\": {}", "")
+        .replace(r#""title": "$generated-start""#, "")
+        .replace(r#""title": "$generated-end""#, "")
         .replace(r#""enabledApiProposals": [],"#, r#""#);
     patch.commit(sh)?;
 
     Ok(())
 }
 
-fn dist_server(sh: &Shell, release: &str, target: &Target) -> anyhow::Result<()> {
+fn dist_server(
+    sh: &Shell,
+    release: &str,
+    target: &Target,
+    allocator: Malloc,
+    zig: bool,
+) -> anyhow::Result<()> {
     let _e = sh.push_env("CFG_RELEASE", release);
     let _e = sh.push_env("CARGO_PROFILE_RELEASE_LTO", "thin");
 
@@ -82,17 +93,20 @@ fn dist_server(sh: &Shell, release: &str, target: &Target) -> anyhow::Result<()>
     //   * on Linux, this blows up the binary size from 8MB to 43MB, which is unreasonable.
     // let _e = sh.push_env("CARGO_PROFILE_RELEASE_DEBUG", "1");
 
-    if target.name.contains("-linux-") {
-        env::set_var("CC", "clang");
-    }
-
-    let target_name = &target.name;
-    cmd!(sh, "cargo build --manifest-path ./crates/rust-analyzer/Cargo.toml --bin rust-analyzer --target {target_name} --release").run()?;
+    let linux_target = target.is_linux();
+    let target_name = match &target.libc_suffix {
+        Some(libc_suffix) if zig => format!("{}.{libc_suffix}", target.name),
+        _ => target.name.to_owned(),
+    };
+    let features = allocator.to_features();
+    let command = if linux_target && zig { "zigbuild" } else { "build" };
+    cmd!(sh, "cargo {command} --manifest-path ./crates/rust-analyzer/Cargo.toml --bin rust-analyzer --target {target_name} {features...} --release").run()?;
 
     let dst = Path::new("dist").join(&target.artifact_name);
-    gzip(&target.server_path, &dst.with_extension("gz"))?;
     if target_name.contains("-windows-") {
         zip(&target.server_path, target.symbols_path.as_ref(), &dst.with_extension("zip"))?;
+    } else {
+        gzip(&target.server_path, &dst.with_extension("gz"))?;
     }
 
     Ok(())
@@ -144,6 +158,7 @@ fn zip(src_path: &Path, symbols_path: Option<&PathBuf>, dest_path: &Path) -> any
 
 struct Target {
     name: String,
+    libc_suffix: Option<String>,
     server_path: PathBuf,
     symbols_path: Option<PathBuf>,
     artifact_name: String,
@@ -155,15 +170,19 @@ impl Target {
             Ok(target) => target,
             _ => {
                 if cfg!(target_os = "linux") {
-                    "x86_64-unknown-linux-gnu".to_string()
+                    "x86_64-unknown-linux-gnu".to_owned()
                 } else if cfg!(target_os = "windows") {
-                    "x86_64-pc-windows-msvc".to_string()
+                    "x86_64-pc-windows-msvc".to_owned()
                 } else if cfg!(target_os = "macos") {
-                    "x86_64-apple-darwin".to_string()
+                    "x86_64-apple-darwin".to_owned()
                 } else {
                     panic!("Unsupported OS, maybe try setting RA_TARGET")
                 }
             }
+        };
+        let (name, libc_suffix) = match name.split_once('.') {
+            Some((l, r)) => (l.to_owned(), Some(r.to_owned())),
+            None => (name, None),
         };
         let out_path = project_root.join("target").join(&name).join("release");
         let (exe_suffix, symbols_path) = if name.contains("-windows-") {
@@ -173,7 +192,11 @@ impl Target {
         };
         let server_path = out_path.join(format!("rust-analyzer{exe_suffix}"));
         let artifact_name = format!("rust-analyzer-{name}{exe_suffix}");
-        Self { name, server_path, symbols_path, artifact_name }
+        Self { name, libc_suffix, server_path, symbols_path, artifact_name }
+    }
+
+    fn is_linux(&self) -> bool {
+        self.name.contains("-linux-")
     }
 }
 

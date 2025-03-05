@@ -6,7 +6,8 @@
 //! Use this to test functionality local to one file.
 //!
 //! Simple Example:
-//! ```
+//!
+//! ```ignore
 //! r#"
 //! fn main() {
 //!     println!("Hello World")
@@ -19,7 +20,8 @@
 //! which is also how to define multiple files in a single test fixture
 //!
 //! Example using two files in the same crate:
-//! ```
+//!
+//! ```ignore
 //! "
 //! //- /main.rs
 //! mod foo;
@@ -33,7 +35,8 @@
 //! ```
 //!
 //! Example using two crates with one file each, with one crate depending on the other:
-//! ```
+//!
+//! ```ignore
 //! r#"
 //! //- /main.rs crate:a deps:b
 //! fn main() {
@@ -51,7 +54,8 @@
 //! for the syntax.
 //!
 //! Example using some available metadata:
-//! ```
+//!
+//! ```ignore
 //! "
 //! //- /lib.rs crate:foo deps:bar,baz cfg:foo=a,bar=b env:OUTDIR=path/to,OTHER=foo
 //! fn insert_source_code_here() {}
@@ -126,11 +130,6 @@ pub struct Fixture {
     ///
     /// Syntax: `library`
     pub library: bool,
-    /// Specifies LLVM data layout to be used.
-    ///
-    /// You probably don't want to manually specify this. See LLVM manual for the
-    /// syntax, if you must: https://llvm.org/docs/LangRef.html#data-layout
-    pub target_data_layout: Option<String>,
     /// Actual file contents. All meta comments are stripped.
     pub text: String,
 }
@@ -145,12 +144,17 @@ pub struct FixtureWithProjectMeta {
     pub mini_core: Option<MiniCore>,
     pub proc_macro_names: Vec<String>,
     pub toolchain: Option<String>,
+    /// Specifies LLVM data layout to be used.
+    ///
+    /// You probably don't want to manually specify this. See LLVM manual for the
+    /// syntax, if you must: <https://llvm.org/docs/LangRef.html#data-layout>
+    pub target_data_layout: String,
 }
 
 impl FixtureWithProjectMeta {
     /// Parses text which looks like this:
     ///
-    ///  ```not_rust
+    ///  ```text
     ///  //- some meta
     ///  line 1
     ///  line 2
@@ -159,7 +163,7 @@ impl FixtureWithProjectMeta {
     ///
     /// Fixture can also start with a proc_macros and minicore declaration (in that order):
     ///
-    /// ```
+    /// ```text
     /// //- toolchain: nightly
     /// //- proc_macros: identity
     /// //- minicore: sized
@@ -168,23 +172,31 @@ impl FixtureWithProjectMeta {
     /// That will set toolchain to nightly and include predefined proc macros and a subset of
     /// `libcore` into the fixture, see `minicore.rs` for what's available. Note that toolchain
     /// defaults to stable.
-    pub fn parse(ra_fixture: &str) -> Self {
+    pub fn parse(#[rust_analyzer::rust_fixture] ra_fixture: &str) -> Self {
         let fixture = trim_indent(ra_fixture);
         let mut fixture = fixture.as_str();
         let mut toolchain = None;
+        let mut target_data_layout =
+            "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128".to_owned();
         let mut mini_core = None;
         let mut res: Vec<Fixture> = Vec::new();
         let mut proc_macro_names = vec![];
 
         if let Some(meta) = fixture.strip_prefix("//- toolchain:") {
             let (meta, remain) = meta.split_once('\n').unwrap();
-            toolchain = Some(meta.trim().to_string());
+            toolchain = Some(meta.trim().to_owned());
+            fixture = remain;
+        }
+
+        if let Some(meta) = fixture.strip_prefix("//- target_data_layout:") {
+            let (meta, remain) = meta.split_once('\n').unwrap();
+            meta.trim().clone_into(&mut target_data_layout);
             fixture = remain;
         }
 
         if let Some(meta) = fixture.strip_prefix("//- proc_macros:") {
             let (meta, remain) = meta.split_once('\n').unwrap();
-            proc_macro_names = meta.split(',').map(|it| it.trim().to_string()).collect();
+            proc_macro_names = meta.split(',').map(|it| it.trim().to_owned()).collect();
             fixture = remain;
         }
 
@@ -206,16 +218,11 @@ impl FixtureWithProjectMeta {
                 );
             }
 
-            if line.starts_with("//-") {
+            if let Some(line) = line.strip_prefix("//-") {
                 let meta = Self::parse_meta_line(line);
                 res.push(meta);
             } else {
-                if line.starts_with("// ")
-                    && line.contains(':')
-                    && !line.contains("::")
-                    && !line.contains('.')
-                    && line.chars().all(|it| !it.is_uppercase())
-                {
+                if matches!(line.strip_prefix("// "), Some(l) if l.trim().starts_with('/')) {
                     panic!("looks like invalid metadata line: {line:?}");
                 }
 
@@ -225,16 +232,15 @@ impl FixtureWithProjectMeta {
             }
         }
 
-        Self { fixture: res, mini_core, proc_macro_names, toolchain }
+        Self { fixture: res, mini_core, proc_macro_names, toolchain, target_data_layout }
     }
 
     //- /lib.rs crate:foo deps:bar,baz cfg:foo=a,bar=b env:OUTDIR=path/to,OTHER=foo
     fn parse_meta_line(meta: &str) -> Fixture {
-        assert!(meta.starts_with("//-"));
-        let meta = meta["//-".len()..].trim();
+        let meta = meta.trim();
         let mut components = meta.split_ascii_whitespace();
 
-        let path = components.next().expect("fixture meta must start with a path").to_string();
+        let path = components.next().expect("fixture meta must start with a path").to_owned();
         assert!(path.starts_with('/'), "fixture path does not start with `/`: {path:?}");
 
         let mut krate = None;
@@ -245,9 +251,6 @@ impl FixtureWithProjectMeta {
         let mut env = FxHashMap::default();
         let mut introduce_new_source_root = None;
         let mut library = false;
-        let mut target_data_layout = Some(
-            "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128".to_string(),
-        );
         for component in components {
             if component == "library" {
                 library = true;
@@ -257,22 +260,22 @@ impl FixtureWithProjectMeta {
             let (key, value) =
                 component.split_once(':').unwrap_or_else(|| panic!("invalid meta line: {meta:?}"));
             match key {
-                "crate" => krate = Some(value.to_string()),
-                "deps" => deps = value.split(',').map(|it| it.to_string()).collect(),
+                "crate" => krate = Some(value.to_owned()),
+                "deps" => deps = value.split(',').map(|it| it.to_owned()).collect(),
                 "extern-prelude" => {
                     if value.is_empty() {
                         extern_prelude = Some(Vec::new());
                     } else {
                         extern_prelude =
-                            Some(value.split(',').map(|it| it.to_string()).collect::<Vec<_>>());
+                            Some(value.split(',').map(|it| it.to_owned()).collect::<Vec<_>>());
                     }
                 }
-                "edition" => edition = Some(value.to_string()),
+                "edition" => edition = Some(value.to_owned()),
                 "cfg" => {
                     for entry in value.split(',') {
                         match entry.split_once('=') {
-                            Some((k, v)) => cfgs.push((k.to_string(), Some(v.to_string()))),
-                            None => cfgs.push((entry.to_string(), None)),
+                            Some((k, v)) => cfgs.push((k.to_owned(), Some(v.to_owned()))),
+                            None => cfgs.push((entry.to_owned(), None)),
                         }
                     }
                 }
@@ -283,8 +286,7 @@ impl FixtureWithProjectMeta {
                         }
                     }
                 }
-                "new_source_root" => introduce_new_source_root = Some(value.to_string()),
-                "target_data_layout" => target_data_layout = Some(value.to_string()),
+                "new_source_root" => introduce_new_source_root = Some(value.to_owned()),
                 _ => panic!("bad component: {component:?}"),
             }
         }
@@ -307,7 +309,6 @@ impl FixtureWithProjectMeta {
             env,
             introduce_new_source_root,
             library,
-            target_data_layout,
         }
     }
 }
@@ -381,7 +382,7 @@ impl MiniCore {
             let (flag, deps) = line.split_once(':').unwrap();
             let flag = flag.trim();
 
-            self.valid_flags.push(flag.to_string());
+            self.valid_flags.push(flag.to_owned());
             implications.extend(
                 iter::repeat(flag)
                     .zip(deps.split(", ").map(str::trim).filter(|dep| !dep.is_empty())),
@@ -401,7 +402,7 @@ impl MiniCore {
             let mut changed = false;
             for &(u, v) in &implications {
                 if self.has_flag(u) && !self.has_flag(v) {
-                    self.activated_flags.push(v.to_string());
+                    self.activated_flags.push(v.to_owned());
                     changed = true;
                 }
             }
@@ -447,7 +448,7 @@ impl MiniCore {
         }
 
         if !active_regions.is_empty() {
-            panic!("unclosed regions: {:?} Add an `endregion` comment", active_regions);
+            panic!("unclosed regions: {active_regions:?} Add an `endregion` comment");
         }
 
         for flag in &self.valid_flags {
@@ -476,19 +477,24 @@ fn parse_fixture_checks_further_indented_metadata() {
 
 #[test]
 fn parse_fixture_gets_full_meta() {
-    let FixtureWithProjectMeta { fixture: parsed, mini_core, proc_macro_names, toolchain } =
-        FixtureWithProjectMeta::parse(
-            r#"
+    let FixtureWithProjectMeta {
+        fixture: parsed,
+        mini_core,
+        proc_macro_names,
+        toolchain,
+        target_data_layout: _,
+    } = FixtureWithProjectMeta::parse(
+        r#"
 //- toolchain: nightly
 //- proc_macros: identity
 //- minicore: coerce_unsized
 //- /lib.rs crate:foo deps:bar,baz cfg:foo=a,bar=b,atom env:OUTDIR=path/to,OTHER=foo
 mod m;
 "#,
-        );
-    assert_eq!(toolchain, Some("nightly".to_string()));
-    assert_eq!(proc_macro_names, vec!["identity".to_string()]);
-    assert_eq!(mini_core.unwrap().activated_flags, vec!["coerce_unsized".to_string()]);
+    );
+    assert_eq!(toolchain, Some("nightly".to_owned()));
+    assert_eq!(proc_macro_names, vec!["identity".to_owned()]);
+    assert_eq!(mini_core.unwrap().activated_flags, vec!["coerce_unsized".to_owned()]);
     assert_eq!(1, parsed.len());
 
     let meta = &parsed[0];

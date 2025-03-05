@@ -1,4 +1,4 @@
-#![allow(clippy::redundant_clone, clippy::unnecessary_operation)]
+#![allow(clippy::redundant_clone, clippy::unnecessary_operation, clippy::incompatible_msrv)]
 #![warn(clippy::manual_non_exhaustive, clippy::borrow_as_ptr, clippy::manual_bits)]
 
 use std::mem::{size_of, size_of_val};
@@ -72,6 +72,7 @@ fn check_index_refutable_slice() {
 fn map_clone_suggest_copied() {
     // This should still trigger the lint but suggest `cloned()` instead of `copied()`
     let _: Option<u64> = Some(&16).map(|b| *b);
+    //~^ map_clone
 }
 
 fn borrow_as_ptr() {
